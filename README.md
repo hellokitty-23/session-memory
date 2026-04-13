@@ -41,6 +41,22 @@ English: This skill is mainly used through commands like:
 中文：这些口令分别用于保存、恢复、搜索和检查当前项目记忆。  
 English: These commands are used to save, restore, search, and check project memory.
 
+## 何时使用 | When to Use
+
+中文：
+
+- 当一个会话已经变长，项目上下文开始分散时
+- 当你准备在新会话中继续同一项目时
+- 当你想保留重要决策、研究结论、失败路径和下一步时
+- 当项目思路已经发生变化，后续需要知道为什么变了时
+
+English:
+
+- When a session gets long and project context starts to spread out
+- When you want to continue the same project in a new session
+- When you want to keep important decisions, findings, failed paths, and next actions
+- When the project approach has changed and the reason for that change should be preserved
+
 ## 使用案例 | Example Use Cases
 
 中文：
