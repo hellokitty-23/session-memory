@@ -25,12 +25,12 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 
 ## 快捷口令
 
-默认使用以下固定口令：
+默认使用以下固定口令，中英文别名等价：
 
-- `session-memory 保存`：内部应拆成 `prepare -> 编辑文件 -> commit` 三步，不再是假定一次命令就完成保存。
-- `session-memory 恢复`：恢复当前项目的记忆，先读 `current.md`，必要时再读 `history.md`，并且只在有未消费 dream 时才读取 `dream-notes.md`。
-- `session-memory 搜索 <关键词>`：在当前项目的记忆中查旧结论、旧路径、旧决策。
-- `session-memory 检查`：判断现在是否到了应该保存的时机。
+- `session-memory 保存` / `session-memory save`：内部应拆成 `prepare -> 编辑文件 -> commit` 三步，不再是假定一次命令就完成保存。
+- `session-memory 恢复` / `session-memory restore`：恢复当前项目的记忆，先读 `current.md`，必要时再读 `history.md`，并且只在有未消费 dream 时才读取 `dream-notes.md`。
+- `session-memory 搜索 <关键词>` / `session-memory search <keyword>`：在当前项目的记忆中查旧结论、旧路径、旧决策。
+- `session-memory 检查` / `session-memory check`：判断现在是否到了应该保存的时机。
 
 对应脚本入口：
 
@@ -39,7 +39,7 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 - 搜索：`scripts/search_session_memory.py`
 - 检查：`scripts/checkpoint_session_memory.py`
 
-如果项目记忆文件还不存在，`保存` 的 `prepare` 阶段应先初始化。
+如果项目记忆文件还不存在，`保存 / save` 的 `prepare` 阶段应先初始化。
 
 默认使用中文记录。只有代码、命令、路径、API 名、库名、固定技术标识等内容保留原文。
 
@@ -260,9 +260,9 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 - 一个阻塞被解决
 - 会话即将结束
 
-如果不确定现在该不该保存，先运行 `session-memory 检查` 对应脚本，再决定。
+如果不确定现在该不该保存，先运行 `session-memory 检查` / `session-memory check` 对应脚本，再决定。
 
-执行 `session-memory 保存` 时，内部流程应是：
+执行 `session-memory 保存` / `session-memory save` 时，内部流程应是：
 
 1. 先运行 `save --stage prepare`，定位 `current.md/history.md`，必要时初始化。
 2. 编辑 `current.md`，并在满足历史追加条件时更新 `history.md`。
@@ -376,10 +376,15 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 ## 典型请求
 
 - `session-memory 保存`
+- `session-memory save`
 - `session-memory 恢复`
+- `session-memory restore`
 - `session-memory 搜索 stripe webhook`
+- `session-memory search stripe webhook`
 - `session-memory 检查`
+- `session-memory check`
 - `session-memory 恢复，并带上新的 dream-notes`
+- `session-memory restore with latest dream-notes`
 - `把这次会话里真正有用的东西记下来，后面新开会话能接上。`
 - `不要总结聊天，帮我记录当前思路、做过什么、哪些路走不通。`
 - `新会话先恢复之前的关键记忆，再继续做。`
