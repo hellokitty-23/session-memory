@@ -156,6 +156,36 @@ def format_research_conclusion(row: list[str]) -> str | None:
     return None
 
 
+def format_branch_research_row(row: list[str]) -> tuple[str | None, str | None, str | None]:
+    work_context = normalize_item(row[1]) if len(row) > 1 else ""
+    branch = normalize_item(row[2]) if len(row) > 2 else ""
+    topic = normalize_item(row[3]) if len(row) > 3 else ""
+    conclusion = normalize_item(row[4]) if len(row) > 4 else ""
+    valid = normalize_item(row[5]).lower() if len(row) > 5 else ""
+    merged = normalize_item(row[6]).lower() if len(row) > 6 else ""
+    next_step = normalize_item(row[7]) if len(row) > 7 else ""
+
+    label_parts = [part for part in (work_context, branch, topic) if part]
+    label = " / ".join(label_parts)
+    if conclusion:
+        heuristic = compact_text(f"{label}: {conclusion}" if label else conclusion, 120)
+    else:
+        heuristic = compact_text(label, 120) if label else None
+
+    warning = None
+    if merged == "no" and next_step:
+        warning = compact_text(f"{label}: {next_step}" if label else next_step, 120)
+    elif valid in {"no", "partial", "unknown"} and conclusion:
+        warning = compact_text(f"{label}: {conclusion}" if label else conclusion, 120)
+
+    mistake = None
+    if valid == "no" and conclusion:
+        base = f"{label}: {conclusion}" if label else conclusion
+        mistake = format_mistake_item(base)
+
+    return heuristic, warning, mistake
+
+
 def format_mistake_item(value: str) -> str:
     text = compact_text(value, 110)
     if not text:
@@ -189,12 +219,18 @@ def build_project_dream(entry: dict[str, str], generated_at: str) -> str | None:
         for item in (format_research_conclusion(row) for row in research_rows if any(cell for cell in row))
         if item
     ]
+    branch_rows = extract_table_rows(current_sections.get("分支研究", []))
+    branch_insights = [format_branch_research_row(row) for row in branch_rows if any(cell for cell in row)]
+    branch_heuristics = [item[0] for item in branch_insights if item[0]]
+    branch_warnings = [item[1] for item in branch_insights if item[1]]
+    branch_mistakes = [item[2] for item in branch_insights if item[2]]
     history_signals = parse_history_entries(history_text)
 
     correct_trajectory = limit_items(effective + current_approach, limit=3, max_len=110)
-    mistakes = [format_mistake_item(item) for item in limit_items(ineffective, limit=3, max_len=110)]
-    heuristics = limit_items(research_conclusions + prompts, limit=3, max_len=120)
-    warnings = limit_items(unresolved + next_steps + history_signals, limit=3, max_len=120)
+    mistakes = [format_mistake_item(item) for item in limit_items(ineffective, limit=3, max_len=110)] + branch_mistakes
+    heuristics = limit_items(research_conclusions + branch_heuristics + prompts, limit=3, max_len=120)
+    warnings = limit_items(unresolved + next_steps + branch_warnings + history_signals, limit=3, max_len=120)
+    mistakes = limit_items(mistakes, limit=3, max_len=120)
 
     sections: list[tuple[str, list[str]]] = []
     if correct_trajectory:

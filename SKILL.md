@@ -269,6 +269,13 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 3. 编辑完成后运行 `save --stage commit`，把这次保存登记为项目新活动，并触发 `sleep check`。
 4. 只记录耐久、可复用的信息，不记录工具噪音、来回讨论、低价值中间输出。
 
+如果当前保存的是未进入主线的研究路径，不要直接覆盖主线叙述，优先按下面规则记录：
+
+- `current.md` 的主线区块仍然只写当前默认接手状态
+- 非主线内容追加到 `分支研究` 表格
+- `history.md` 里追加带 `[context: ...]` 的研究条目，明确这次更新发生在哪个工作上下文
+- 只有当某条分支研究已经成为默认方向时，才把它并入主线区块
+
 ## `current.md` 记录什么
 
 `current.md` 必须尽量高信号，建议包含以下部分：
@@ -278,6 +285,9 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 - `思路变化`：关键方案从什么变成什么，原因是什么。
 - `已完成工作`：已经做完、无需重复做的部分。
 - `研究记录`：查过什么，得到了什么结论，依据是什么。
+- `分支研究`：记录未进入主线、但值得保留的研究路径。每行至少带上 `日期 / 工作上下文 / 分支研究 / 研究主题 / 当前结论 / 是否有效 / 是否并入主线 / 下一步`。
+- `工作上下文`：写当前研究发生在哪个工作副本或 Git 分支里，例如 `main`、`main-local`、`feature-auth`。
+- `分支研究`（字段）：写这条研究路径的短名，例如 `stl`、`signature-fix`、`queue-vs-cron`。
 - `关键词/标签`：便于后续搜索命中。
 - `关键文件与路径`：便于快速找回上下文落点。
 - `有效做法`：哪些方案、实验、材料证明有用。
@@ -295,6 +305,21 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 - `下一步变化`
 
 不要因为措辞变化、普通执行过程、零散聊天、或短暂工具输出就写历史。
+
+如果更新属于某条分支研究，条目标题建议写成：
+
+```md
+### YYYY-MM-DD HH:MM [context: main-local]
+```
+
+并补充：
+
+- `工作上下文`：`main / main-local / feature-xxx`
+- `分支研究`：这条研究路径的短名
+- `研究主题`：当前在验证什么
+- `研究结果`：这次更新确认了什么
+- `是否有效`：`yes / no / partial / unknown`
+- `是否并入主线`：`yes / no`
 
 ## 历史追加标准
 
@@ -385,6 +410,8 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 - `session-memory check`
 - `session-memory 恢复，并带上新的 dream-notes`
 - `session-memory restore with latest dream-notes`
+- `把这个 local fork 的研究结果增量记下来，但不要覆盖主线`
+- `记录这条 feature 分支的研究结论，并标明工作上下文是 feature-auth`
 - `把这次会话里真正有用的东西记下来，后面新开会话能接上。`
 - `不要总结聊天，帮我记录当前思路、做过什么、哪些路走不通。`
 - `新会话先恢复之前的关键记忆，再继续做。`

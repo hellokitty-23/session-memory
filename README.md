@@ -20,6 +20,7 @@ English: It is designed to keep:
 - 当前思路 | working approach
 - 重要决策 | important decisions
 - 已确认结论 | confirmed findings
+- 分支研究结果 | branch research results
 - 失败路径 | failed paths
 - 下一步动作 | next actions
 
@@ -48,6 +49,7 @@ English: These commands are used to save, restore, search, and check project mem
 - 当一个会话已经变长，项目上下文开始分散时
 - 当你准备在新会话中继续同一项目时
 - 当你想保留重要决策、研究结论、失败路径和下一步时
+- 当你想增量保存某条分支研究，但又不想覆盖当前主线时
 - 当项目思路已经发生变化，后续需要知道为什么变了时
 
 English:
@@ -55,6 +57,7 @@ English:
 - When a session gets long and project context starts to spread out
 - When you want to continue the same project in a new session
 - When you want to keep important decisions, findings, failed paths, and next actions
+- When you want to save branch research incrementally without overwriting the current main path
 - When the project approach has changed and the reason for that change should be preserved
 
 ## 使用案例 | Example Use Cases
@@ -64,12 +67,14 @@ English:
 - 当一个会话已经积累了较多研究和决策时，可以用 `session-memory 保存` / `session-memory save` 留下当前上下文，而不是下次重新解释。
 - 当你在新会话中继续同一项目时，可以用 `session-memory 恢复` / `session-memory restore` 快速接上当前目标、思路和下一步。
 - 当你只想确认某个方案为什么被放弃，或某个结论是否已经验证过时，可以用 `session-memory 搜索 <关键词>` / `session-memory search <keyword>` 做轻量检索。
+- 当你正在 `main-local`、feature 分支或其他工作上下文中做实验时，可以把研究结果增量写入记忆，并在记录里标明 `工作上下文 / work context`，避免覆盖主线。
 
 English:
 
 - After a session has accumulated enough research and decisions, use `session-memory 保存` / `session-memory save` to keep the current context instead of re-explaining it later.
 - When continuing the same project in a new session, use `session-memory 恢复` / `session-memory restore` to quickly recover the current goal, approach, and next step.
 - If you only need to check why a path was abandoned or whether something was already verified, use `session-memory 搜索 <关键词>` / `session-memory search <keyword>` for lightweight lookup.
+- When experimenting in `main-local`, a feature branch, or another work context, you can record branch research incrementally with an explicit `work context` so the main path stays clean.
 
 ## 核心文件 | Core Files
 
