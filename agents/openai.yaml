@@ -1,4 +1,4 @@
 interface:
   display_name: "Session Memory"
-  short_description: "Capture, restore, search, and checkpoint high-value session memory."
-  default_prompt: "Capture, restore, search, or checkpoint high-value session memory: current goals, thought changes, research outcomes, completed work, failed approaches, key paths, and next actions."
+  short_description: "Capture, research-save, restore, search, and checkpoint high-value session memory."
+  default_prompt: "Capture, research-save, restore, search, or checkpoint high-value session memory: current goals, thought changes, staged research outcomes, completed work, failed approaches, key paths, and next actions."

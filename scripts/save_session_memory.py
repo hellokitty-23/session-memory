@@ -63,7 +63,7 @@ def main() -> int:
             return completed.returncode
 
     if args.stage == "commit":
-        preflight = run_preflight(paths, action="save")
+        preflight = run_preflight(paths, action="save", mark_active=True)
         print(f"preflight_sleep_status={preflight['sleep_check']['status']}")
 
     print(f"current={current_path}")

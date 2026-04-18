@@ -28,6 +28,7 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 默认使用以下固定口令，中英文别名等价：
 
 - `session-memory 保存` / `session-memory save`：内部应拆成 `prepare -> 编辑文件 -> commit` 三步，不再是假定一次命令就完成保存。
+- `session-memory 研究保存` / `session-memory research-save`：把未并入主线的研究阶段性追加到 `research.md`，不覆盖 `current.md`。
 - `session-memory 恢复` / `session-memory restore`：恢复当前项目的记忆，先读 `current.md`，必要时再读 `history.md`，并且只在有未消费 dream 时才读取 `dream-notes.md`。
 - `session-memory 搜索 <关键词>` / `session-memory search <keyword>`：在当前项目的记忆中查旧结论、旧路径、旧决策。
 - `session-memory 检查` / `session-memory check`：判断现在是否到了应该保存的时机。
@@ -35,11 +36,13 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 对应脚本入口：
 
 - 保存准备/提交：`scripts/save_session_memory.py --stage prepare|commit`
+- 研究保存准备/提交：`scripts/research_save_session_memory.py --stage prepare|commit`
 - 恢复：`scripts/restore_session_memory.py`
-- 搜索：`scripts/search_session_memory.py`
+- 搜索：`scripts/search_session_memory.py`，默认只查热层；明确要求查研究时再加 `--include-research`，明确要求查归档时再加 `--include-archive`
 - 检查：`scripts/checkpoint_session_memory.py`
+- 归档：`scripts/archive_session_memory.py`
 
-如果项目记忆文件还不存在，`保存 / save` 的 `prepare` 阶段应先初始化。
+如果项目记忆文件还不存在，`保存 / save` 和 `研究保存 / research-save` 的 `prepare` 阶段都应先初始化。
 
 默认使用中文记录。只有代码、命令、路径、API 名、库名、固定技术标识等内容保留原文。
 
@@ -49,6 +52,9 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 
 - `<git-root>/.codex/session-memory/current.md`：当前最新状态，作为恢复入口。
 - `<git-root>/.codex/session-memory/history.md`：追加式历史，只记录关键变化。
+- `<git-root>/.codex/session-memory/research.md`：研究流水账，面向同项目多个工作上下文的追加式研究记录。
+
+默认恢复入口只看 `current.md`、`history.md`、`dream-notes.md`。`research.md` 是研究层，不进入默认恢复/检索热路径，只有用户明确要求“查研究”“恢复某条研究上下文”时才读取。
 
 如果当前工作不在 Git 仓库中，就使用当前工作目录下的 `.codex/session-memory/`。
 
@@ -77,10 +83,13 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 统一前置钩子内容：
 
 1. 登记当前项目到全局 `registry`
-2. 更新当前项目的 `last_active_at`
-3. 检查距离上次 `sleep check` 是否超过 5 小时
-4. 若超过，再判断是否存在需要 dream 的项目
-5. 若需要且当前没有运行中的 dream，则后台异步启动一次 dream
+2. 更新当前项目的 `last_seen_at`
+3. 只有 `save --stage commit` 才更新当前项目的 `last_active_at`
+4. 检查距离上次 `sleep check` 是否超过 5 小时
+5. 若超过，再判断是否存在需要 dream 的项目
+6. 若需要且当前没有运行中的 dream，则后台异步启动一次 dream
+
+这样做的原因是：单纯 `restore/search/check` 不应把项目重新标成“发生了新内容变化”，否则会造成重复 dream 和无意义快照增长。
 
 dream 判定规则：
 
@@ -104,6 +113,18 @@ dream 判定规则：
 
 ```bash
 python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/search_session_memory.py" --workspace "$PWD" --scope auto --query "关键词"
+```
+
+只有当用户明确要求“查归档”时，才追加：
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/search_session_memory.py" --workspace "$PWD" --scope auto --query "关键词" --include-archive
+```
+
+只有当用户明确要求“查研究”时，才追加：
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/search_session_memory.py" --workspace "$PWD" --scope auto --query "关键词" --include-research
 ```
 
 检索命中后：
@@ -196,6 +217,14 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 
 - `${CODEX_HOME:-$HOME/.codex}/session-memory/dreams/`
 
+这里要区分三层：
+
+- `<project>/.codex/session-memory/dream-notes.md` 是覆盖式文件，每次 dream 会重写最新提炼稿，不会无限追加。
+- `<project>/.codex/session-memory/history.md` 是追加式文件，会随着关键变化持续变长。
+- `<project>/.codex/session-memory/research.md` 是追加式研究层，会在 dream 提炼时参与归纳，但不进入默认恢复入口。
+- `${CODEX_HOME:-$HOME/.codex}/session-memory/dreams/` 会按每次成功 dream 的快照数量持续增加，但会在后续 dream 成功后做冷层归档。
+- `<project>/.codex/session-memory/archive/` 与 `${CODEX_HOME:-$HOME/.codex}/session-memory/archive/` 是冷层，只做兜底保留，不进入默认恢复/检索路径。
+
 `dream-notes.md` 不是 `current.md/history.md` 的复制，而是项目提炼稿，只保留以后还能直接指导判断的内容：
 
 - `正确轨迹`：最多 3 条，只记被证明有效的做法和路径
@@ -210,6 +239,29 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 - 能提炼成规则就不要复述过程
 - 没有实质内容的段落不要输出
 - 如果提炼不出有效内容，就不要生成新的 dream 产物
+
+## 归档策略
+
+归档必须放在 dream 之后，而不是和热层并列长期参与默认读取。也就是说：先提炼，再瘦身。
+
+如果项目已经持续较久，建议归档“旧历史”和“旧快照”，但不要归档当前活跃层：
+
+- 不要归档：`current.md`、最新 `dream-notes.md`、活跃项目的 `registry/state` 元数据
+- 可以归档：`history.md` 的旧条目、`${CODEX_HOME:-$HOME/.codex}/session-memory/dreams/` 里的旧快照、`research.md` 中已并入主线或已判定无效的旧研究条目
+
+默认命令：
+
+```bash
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/archive_session_memory.py" --workspace "$PWD" --scope auto --dry-run
+```
+
+默认行为：
+
+- 只有在存在“新 dream 尚未归档”的前提下，才允许继续做项目历史瘦身
+- 保留 `history.md` 最新若干条，把更早的条目移到 `archive/history-archive.md`
+- 把 `research.md` 中 `是否并入主线=yes` 或 `是否有效=no` 的研究条目移到 `archive/research-archive.md`
+- 保留近一段时间的全局 dream 快照，把更老的快照移到 `${CODEX_HOME:-$HOME/.codex}/session-memory/archive/dreams/`
+- 默认 `restore/search` 不读取 `archive`；只有用户明确要求查看归档时，才显式带 `--include-archive`
 
 ## 恢复流程
 
@@ -269,12 +321,14 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 3. 编辑完成后运行 `save --stage commit`，把这次保存登记为项目新活动，并触发 `sleep check`。
 4. 只记录耐久、可复用的信息，不记录工具噪音、来回讨论、低价值中间输出。
 
-如果当前保存的是未进入主线的研究路径，不要直接覆盖主线叙述，优先按下面规则记录：
+如果当前内容还没有进入主线，不要直接覆盖 `current.md`，优先改走 `研究保存`：
 
-- `current.md` 的主线区块仍然只写当前默认接手状态
-- 非主线内容追加到 `分支研究` 表格
-- `history.md` 里追加带 `[context: ...]` 的研究条目，明确这次更新发生在哪个工作上下文
-- 只有当某条分支研究已经成为默认方向时，才把它并入主线区块
+1. 先运行 `research-save --stage prepare`，定位 `research.md`，必要时初始化。
+2. 用 `research-save --stage commit` 追加一条研究记录，至少带上 `工作上下文 / 研究主题 / 当前结论 / 是否有效 / 是否并入主线 / 下一步`。
+3. 同一工作上下文允许多次 `研究保存`，每次都只追加，不回写旧条目。
+4. 只有当某条研究已经成为默认方向时，才把它并入 `current.md` 或 `history.md`。
+
+`current.md` 里的 `分支研究` 表格可以保留高层摘要，但不应该再承担多阶段研究流水账的职责；详细研究过程默认写入 `research.md`。
 
 ## `current.md` 记录什么
 
@@ -295,6 +349,17 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/session-memory/scripts/checkpoint_se
 - `未决问题`：还没解决、但确实影响推进的问题。
 - `下一步`：新会话接手后应该先做什么。
 - `恢复提示`：适合直接交给新会话的短提示。
+
+## `research.md` 记录什么
+
+`research.md` 是研究层，不是主线层。最小版只做追加记录，不承担主线恢复入口职责。
+
+- 每次研究保存只追加一条，不回写主线 `current.md`
+- 每条记录至少带：`时间 / 工作上下文 / 研究主题 / 当前结论 / 是否有效 / 是否并入主线 / 下一步`
+- `工作上下文` 用来区分同项目下不同 fork、worktree 或实验副本
+- 同一 `工作上下文` 允许多次 `研究保存`，每次都视为新的阶段性 checkpoint，不覆盖之前的研究条目
+- 研究真正进入主线后，再把结果并入 `current.md` 或 `history.md`
+- 默认 `restore/search` 不读取 `research.md`；只有明确要求查看研究层时，才显式带 `--include-research`
 
 ## 什么时候才写 `history.md`
 

@@ -59,6 +59,7 @@ def resolve_memory_paths(base: Path, scope: str) -> dict[str, Path | str]:
         "target_dir": target_dir,
         "current": target_dir / "current.md",
         "history": target_dir / "history.md",
+        "research": target_dir / "research.md",
         "dream_notes": target_dir / "dream-notes.md",
     }
 
@@ -135,6 +136,7 @@ def upsert_project_registry(
     paths: dict[str, Path | str],
     action: str,
     active_at: str | None = None,
+    mark_active: bool = False,
 ) -> dict[str, Any]:
     registry = load_registry()
     key = project_key(paths)
@@ -148,12 +150,14 @@ def upsert_project_registry(
             "target_dir": str(paths["target_dir"]),
             "current_path": str(paths["current"]),
             "history_path": str(paths["history"]),
+            "research_path": str(paths["research"]),
             "dream_notes_path": str(paths["dream_notes"]),
             "last_action": action,
             "last_seen_at": now,
-            "last_active_at": now,
         }
     )
+    if mark_active or not entry.get("last_active_at"):
+        entry["last_active_at"] = now
     projects[key] = entry
     save_registry(registry)
     return entry
@@ -198,7 +202,10 @@ def iter_due_projects() -> list[dict[str, Any]]:
     for entry in registry.get("projects", {}).values():
         current_path = Path(entry["current_path"])
         history_path = Path(entry["history_path"])
-        if not current_path.exists() and not history_path.exists():
+        research_path = Path(
+            entry.get("research_path") or Path(entry["target_dir"]) / "research.md"
+        )
+        if not current_path.exists() and not history_path.exists() and not research_path.exists():
             continue
         if due_for_dream(entry):
             due_entries.append(entry)
@@ -299,9 +306,10 @@ def run_preflight(
     paths: dict[str, Path | str],
     action: str,
     sleep_threshold_hours: float = 5.0,
+    mark_active: bool = False,
 ) -> dict[str, Any]:
     now = iso_now()
-    upsert_project_registry(paths, action=action, active_at=now)
+    upsert_project_registry(paths, action=action, active_at=now, mark_active=mark_active)
 
     state = load_state()
     last_check = parse_iso(state.get("last_sleep_check_at"))

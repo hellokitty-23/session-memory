@@ -37,6 +37,7 @@ def main() -> int:
     target_dir, resolved_scope = resolve_target_dir(workspace, args.scope)
     current_path = target_dir / "current.md"
     history_path = target_dir / "history.md"
+    research_path = target_dir / "research.md"
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -50,12 +51,18 @@ def main() -> int:
         read_text(refs_dir / "history-template.md"),
         force=args.force,
     )
+    write_if_missing(
+        research_path,
+        read_text(refs_dir / "research-template.md"),
+        force=args.force,
+    )
 
     print(f"workspace={workspace}")
     print(f"scope={resolved_scope}")
     print(f"target_dir={target_dir}")
     print(f"current={current_path}")
     print(f"history={history_path}")
+    print(f"research={research_path}")
     return 0
 
 

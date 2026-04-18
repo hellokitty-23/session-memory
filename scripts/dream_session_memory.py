@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from archive_session_memory import (
+    DEFAULT_DREAM_KEEP_DAYS,
+    DEFAULT_HISTORY_KEEP_ENTRIES,
+    archive_project_history_after_dream,
+    archive_project_research_after_dream,
+    move_old_dream_snapshots,
+)
 from session_memory_common import (
     DREAMS_DIR,
     load_registry,
@@ -22,6 +30,8 @@ AGENTS_RULE_MARKER = ".codex/session-memory/dream-notes.md"
 AGENTS_RULE_BLOCK = """## Session Memory Dream Notes
 - 如果存在 `.codex/session-memory/dream-notes.md`，在恢复或进入项目上下文时一并读取，作为补充上下文。
 - `dream-notes.md` 只补充经验、风险、提醒，不覆盖 `current.md` 的优先级。
+- `research.md` 是研究层，不是默认主线恢复入口；只有用户明确要求查看研究上下文时才读取。
+- `.codex/session-memory/archive/` 属于冷层；除非用户明确要求查看归档，否则默认不要读取。
 """
 
 
@@ -92,7 +102,13 @@ def normalize_item(value: str) -> str:
         "需要检查：",
         "下一步先做什么：",
         "触发原因：",
+        "分支研究：",
         "发生了什么变化：",
+        "研究主题：",
+        "研究结果：",
+        "当前结论：",
+        "是否有效：",
+        "是否并入主线：",
         "为什么变：",
         "证据：",
         "关键词 / 标签：",
@@ -114,7 +130,15 @@ def compact_text(value: str, max_len: int = 120) -> str:
 
 
 def limit_items(items: list[str], limit: int, max_len: int = 120) -> list[str]:
-    return [compact_text(item, max_len=max_len) for item in dedupe(items)[:limit]]
+    compacted: list[str] = []
+    for item in dedupe(items):
+        text = compact_text(item, max_len=max_len).strip()
+        if not text:
+            continue
+        compacted.append(text)
+        if len(compacted) >= limit:
+            break
+    return compacted
 
 
 def parse_history_entries(text: str, limit: int = 4) -> list[str]:
@@ -124,8 +148,10 @@ def parse_history_entries(text: str, limit: int = 4) -> list[str]:
 
     def flush() -> None:
         nonlocal current_title, bullets
-        if current_title and bullets:
-            entries.append(compact_text(f"{current_title}: {'; '.join(bullets[:2])}", 140))
+        normalized_bullets = [normalize_item(item) for item in bullets]
+        normalized_bullets = [item for item in normalized_bullets if item]
+        if current_title and normalized_bullets:
+            entries.append(compact_text(f"{current_title}: {'; '.join(normalized_bullets[:2])}", 140))
         current_title = None
         bullets = []
 
@@ -138,6 +164,41 @@ def parse_history_entries(text: str, limit: int = 4) -> list[str]:
             bullets.append(stripped[2:].strip())
     flush()
     return entries[-limit:]
+
+
+def parse_research_entries(text: str) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_lines
+        if not current_lines:
+            return
+
+        header = current_lines[0][4:].strip()
+        context_match = re.search(r"\[context:\s*([^\]]+)\]", header)
+        payload = {
+            "title": header,
+            "work_context": context_match.group(1).strip() if context_match else "",
+        }
+        for line in current_lines[1:]:
+            match = re.match(r"^- ([^:：]+)[：:]\s*(.*)$", line.strip())
+            if not match:
+                continue
+            payload[match.group(1).strip()] = match.group(2).strip()
+        entries.append(payload)
+        current_lines = []
+
+    for line in text.splitlines():
+        if line.startswith("### "):
+            flush()
+            current_lines = [line]
+            continue
+        if current_lines:
+            current_lines.append(line)
+
+    flush()
+    return entries
 
 
 def format_research_conclusion(row: list[str]) -> str | None:
@@ -186,6 +247,36 @@ def format_branch_research_row(row: list[str]) -> tuple[str | None, str | None, 
     return heuristic, warning, mistake
 
 
+def format_research_log_entry(entry: dict[str, str]) -> tuple[str | None, str | None, str | None]:
+    work_context = normalize_item(entry.get("work_context", ""))
+    topic = normalize_item(entry.get("研究主题", ""))
+    conclusion = normalize_item(entry.get("当前结论", ""))
+    valid = normalize_item(entry.get("是否有效", "")).lower()
+    merged = normalize_item(entry.get("是否并入主线", "")).lower()
+    next_step = normalize_item(entry.get("下一步", ""))
+
+    label = " / ".join(part for part in (work_context, topic) if part)
+    if not label:
+        label = normalize_item(entry.get("title", ""))
+
+    heuristic = None
+    if conclusion and (valid in {"yes", "partial"} or merged == "yes"):
+        heuristic = compact_text(f"{label}: {conclusion}" if label else conclusion, 120)
+
+    warning = None
+    if merged == "no" and next_step:
+        warning = compact_text(f"{label}: {next_step}" if label else next_step, 120)
+    elif valid in {"partial", "unknown"} and conclusion:
+        warning = compact_text(f"{label}: {conclusion}" if label else conclusion, 120)
+
+    mistake = None
+    if valid == "no" and conclusion:
+        base = f"{label}: {conclusion}" if label else conclusion
+        mistake = format_mistake_item(base)
+
+    return heuristic, warning, mistake
+
+
 def format_mistake_item(value: str) -> str:
     text = compact_text(value, 110)
     if not text:
@@ -198,10 +289,12 @@ def format_mistake_item(value: str) -> str:
 def build_project_dream(entry: dict[str, str], generated_at: str) -> str | None:
     current_path = Path(entry["current_path"])
     history_path = Path(entry["history_path"])
+    research_path = Path(entry.get("research_path") or Path(entry["target_dir"]) / "research.md")
     current_text = read_text(current_path) if current_path.exists() else ""
     history_text = read_text(history_path) if history_path.exists() else ""
+    research_text = read_text(research_path) if research_path.exists() else ""
 
-    if not current_text and not history_text:
+    if not current_text and not history_text and not research_text:
         return None
 
     current_sections = split_sections(current_text) if current_text else {}
@@ -224,12 +317,25 @@ def build_project_dream(entry: dict[str, str], generated_at: str) -> str | None:
     branch_heuristics = [item[0] for item in branch_insights if item[0]]
     branch_warnings = [item[1] for item in branch_insights if item[1]]
     branch_mistakes = [item[2] for item in branch_insights if item[2]]
+    research_entries = parse_research_entries(research_text)
+    research_insights = [format_research_log_entry(item) for item in research_entries]
+    research_heuristics = [item[0] for item in research_insights if item[0]]
+    research_warnings = [item[1] for item in research_insights if item[1]]
+    research_mistakes = [item[2] for item in research_insights if item[2]]
     history_signals = parse_history_entries(history_text)
 
     correct_trajectory = limit_items(effective + current_approach, limit=3, max_len=110)
-    mistakes = [format_mistake_item(item) for item in limit_items(ineffective, limit=3, max_len=110)] + branch_mistakes
-    heuristics = limit_items(research_conclusions + branch_heuristics + prompts, limit=3, max_len=120)
-    warnings = limit_items(unresolved + next_steps + branch_warnings + history_signals, limit=3, max_len=120)
+    mistakes = [format_mistake_item(item) for item in limit_items(ineffective, limit=3, max_len=110)] + branch_mistakes + research_mistakes
+    heuristics = limit_items(
+        research_heuristics + research_conclusions + branch_heuristics + prompts,
+        limit=3,
+        max_len=120,
+    )
+    warnings = limit_items(
+        unresolved + next_steps + research_warnings + branch_warnings + history_signals,
+        limit=3,
+        max_len=120,
+    )
     mistakes = limit_items(mistakes, limit=3, max_len=120)
 
     sections: list[tuple[str, list[str]]] = []
@@ -292,6 +398,7 @@ def main() -> int:
     registry = load_registry()
     projects = registry.get("projects", {})
     processed: list[str] = []
+    archive_summaries: list[str] = []
 
     try:
         update_sleep_lock(trigger_action=args.trigger_action)
@@ -312,28 +419,57 @@ def main() -> int:
             dream_notes_path.write_text(content, encoding="utf-8")
             ensure_agents_rule(entry)
 
+            snapshot_key = entry.get("target_dir", key)
+            snapshot_suffix = hashlib.sha1(snapshot_key.encode("utf-8")).hexdigest()[:8]
             snapshot_name = (
                 f"{generated_at.replace(':', '').replace('-', '')}"
-                f"-{Path(entry['target_dir']).name or 'workspace'}.md"
+                f"-{Path(entry.get('workspace') or entry['target_dir']).name or 'workspace'}"
+                f"-{snapshot_suffix}.md"
             )
             (DREAMS_DIR / snapshot_name).write_text(content, encoding="utf-8")
 
             entry["last_dream_at"] = generated_at
             entry["last_dream_notes_path"] = str(dream_notes_path)
+            history_archive_result = archive_project_history_after_dream(
+                entry=entry,
+                keep_entries=DEFAULT_HISTORY_KEEP_ENTRIES,
+                persist_state=False,
+            )
+            research_archive_result = archive_project_research_after_dream(
+                entry=entry,
+                persist_state=False,
+            )
+            archived_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+            entry["last_history_archive_at"] = archived_at
+            entry["last_research_archive_at"] = archived_at
+            entry["last_archive_at"] = archived_at
+            archive_summaries.append(
+                f"{key}|history_status={history_archive_result.status}|history_archived={history_archive_result.archived_entries}|research_status={research_archive_result.status}|research_archived={research_archive_result.archived_entries}"
+            )
             processed.append(key)
 
         if processed:
+            moved_dreams = move_old_dream_snapshots(
+                keep_days=DEFAULT_DREAM_KEEP_DAYS,
+                dry_run=False,
+            )
             save_registry(registry)
             state = load_state()
             state["last_sleep_at"] = generated_at
             state["last_sleep_trigger_action"] = args.trigger_action
+            state["last_sleep_archived_dream_snapshots"] = len(moved_dreams)
             save_state(state)
+        else:
+            moved_dreams = []
 
         print(f"trigger_action={args.trigger_action}")
         print(f"generated_at={generated_at}")
         print(f"processed_projects={len(processed)}")
         for key in processed:
             print(f"project={key}")
+        for item in archive_summaries:
+            print(f"archive={item}")
+        print(f"archived_dream_snapshots={len(moved_dreams)}")
         return 0
     finally:
         release_sleep_lock()
