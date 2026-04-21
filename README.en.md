@@ -64,6 +64,32 @@ The default hot path only reads `current.md`, `history.md`, and `dream-notes.md`
 
 For split research within the same project, the minimal research layer uses `research.md` as an append-only research log. `research-save` appends there instead of overwriting the main `current.md`. `research.md` participates in dream distillation and post-dream archive slimming, but it stays out of the default restore/search hot path unless research context is explicitly requested.
 
+## Memory Space Routing
+
+By default, `--scope auto` tries to resolve the current directory into one shared project memory:
+
+- Git projects: use `<git-root>/.codex/session-memory/`
+- Non-git projects: if an ancestor already has `.codex/session-memory/`, reuse that shared layer
+- Only when no shared root exists does it fall back to the current directory's own `.codex/session-memory/`
+
+If one project needs multiple isolated research memories, create `.codex/session-memory/config.toml` at the project root:
+
+```toml
+[spaces]
+"current-path" = "current-research"
+"legacy-path" = "legacy-research"
+```
+
+For convenience, top-level mappings such as `"memory_a" = "current-research"` are also accepted.
+
+Rules:
+
+- each key is a memory space name and each value is a path relative to the project root
+- when the current working directory is inside one of those subdirectories, read/write operations switch to `<subdir>/.codex/session-memory/`
+- if multiple configured paths overlap, the longest matching prefix wins
+- the shared project memory and routed spaces are not auto-merged or auto-read together
+- `research-save` still only appends to the matched space's `research.md`
+
 ## Common Commands
 
 This skill is mainly used through commands like:
@@ -81,7 +107,8 @@ These commands are used for mainline save, research append, restore, search, and
 - After a session has accumulated enough research and decisions, use `session-memory 保存` / `session-memory save` to keep the current context instead of re-explaining it later.
 - When continuing the same project in a new session, use `session-memory 恢复` / `session-memory restore` to quickly recover the current goal, approach, and next step.
 - If you only need to check why a path was abandoned or whether something was already verified, use `session-memory 搜索 <关键词>` / `session-memory search <keyword>` for lightweight lookup.
-- When experimenting in `main-local`, a feature branch, or another work context, use `session-memory 研究保存` / `session-memory research-save` to append staged research into `research.md` with an explicit `work context`. That keeps same-project multi-fork and multi-stage research append-only instead of overwriting the main `current.md`.
+- If you are only recording staged findings inside the same memory space, use `session-memory 研究保存` / `session-memory research-save` to append checkpoints into that space's `research.md`.
+- If the same project has two or more divergent research paths, define separate memory spaces in `config.toml` first, then run `save / research-save / restore / search` inside each routed path. That prevents local forks or sibling research directories from overwriting each other.
 
 ## Core Files
 
@@ -89,6 +116,7 @@ These commands are used for mainline save, research append, restore, search, and
 - `history.md`: key changes and decisions
 - `research.md`: append-only research log for multiple work contexts in the same project
 - `dream-notes.md`: distilled heuristics, mistakes, and warning signals
+- `config.toml`: optional project-level routing config for mapping subdirectories to isolated memory spaces
 
 ## Archive
 

@@ -64,6 +64,32 @@ session-memory 检查
 
 对于同项目下的分叉研究，最小版研究层使用 `research.md` 作为研究流水账。`研究保存` 只往这里追加，不直接覆盖主线 `current.md`。`research.md` 会参与 dream 提炼和 dream 后归档，但默认不进入恢复/检索热路径，除非你明确要求查看研究层。
 
+## 记忆空间路由
+
+默认 `--scope auto` 会优先把当前目录解析到“共享项目记忆”：
+
+- Git 项目：默认落到 `<git-root>/.codex/session-memory/`
+- 非 Git 项目：如果某个祖先目录已经存在 `.codex/session-memory/`，默认继续复用那一层
+- 只有上述共享根都不存在时，才退回当前目录自己的 `.codex/session-memory/`
+
+如果同一项目里需要两套或多套互不覆盖的研究记忆，在项目根创建 `.codex/session-memory/config.toml`：
+
+```toml
+[spaces]
+"当前路线" = "current-research"
+"旧路线" = "legacy-research"
+```
+
+如果你更喜欢最简写法，也兼容直接写 `"记忆1" = "current-research"`。
+
+规则很简单：
+
+- key 是记忆空间名，value 是相对项目根的子目录
+- 当当前工作目录落在某个子目录内时，读写目标会切到 `<子目录>/.codex/session-memory/`
+- 多条路径重叠时，按最长匹配优先
+- 不会自动混读项目共享层和其他记忆空间
+- `研究保存` 仍然只是追加当前命中的 `research.md`
+
 ## 常用口令
 
 这个 skill 主要通过下面这些口令使用：
@@ -81,7 +107,8 @@ session-memory 检查
 - 当一个会话已经积累了较多研究和决策时，可以用 `session-memory 保存` / `session-memory save` 留下当前上下文，而不是下次重新解释。
 - 当你在新会话中继续同一项目时，可以用 `session-memory 恢复` / `session-memory restore` 快速接上当前目标、思路和下一步。
 - 当你只想确认某个方案为什么被放弃，或某个结论是否已经验证过时，可以用 `session-memory 搜索 <关键词>` / `session-memory search <keyword>` 做轻量检索。
-- 当你正在 `main-local`、feature 分支或其他工作上下文中做实验时，用 `session-memory 研究保存` / `session-memory research-save` 把研究结果追加到 `research.md`，并在记录里标明 `工作上下文 / work context`。这样同项目下多个 fork、多次分段研究都只会追加，不会覆盖主线 `current.md`。
+- 当你只是在同一个记忆空间里分阶段记录研究时，用 `session-memory 研究保存` / `session-memory research-save` 把阶段性结论追加到当前空间的 `research.md`。
+- 当你在同一项目里同时推进两条不同研究路线时，先在项目根配置 `config.toml` 划分独立记忆空间，再分别运行 `保存 / 研究保存 / 恢复 / 搜索`。这样不同本地 fork 或不同研究目录就不会互相覆盖。
 
 ## 核心文件
 
@@ -89,6 +116,7 @@ session-memory 检查
 - `history.md`：关键变化与决策
 - `research.md`：同项目多工作上下文的研究流水账
 - `dream-notes.md`：提炼后的经验、错因与预警信号
+- `config.toml`：可选的项目级路由配置，用来把不同子目录映射到独立记忆空间
 
 ## 归档
 

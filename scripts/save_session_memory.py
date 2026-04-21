@@ -6,7 +6,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from session_memory_common import resolve_memory_paths, run_preflight
+from session_memory_common import (
+    iter_resolution_summary,
+    resolve_memory_paths,
+    run_preflight,
+)
 
 
 def main() -> int:
@@ -22,7 +26,7 @@ def main() -> int:
         "--scope",
         choices=("auto", "workspace", "global"),
         default="auto",
-        help="auto=git root if available, else workspace; workspace=current path; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
+        help="auto=shared project memory, optionally routed by config.toml; workspace=current path only; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
     )
     parser.add_argument(
         "--init-if-missing",
@@ -41,9 +45,8 @@ def main() -> int:
     current_path = paths["current"]
     history_path = paths["history"]
 
-    print(f"workspace={paths['workspace']}")
-    print(f"scope={paths['scope']}")
-    print(f"target_dir={paths['target_dir']}")
+    for line in iter_resolution_summary(paths):
+        print(line)
     print(f"stage={args.stage}")
 
     if args.init_if_missing and (not current_path.exists() or not history_path.exists()):

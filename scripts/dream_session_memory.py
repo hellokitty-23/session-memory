@@ -286,6 +286,11 @@ def format_mistake_item(value: str) -> str:
     return compact_text(f"{text} -> 下次先验证前提，再继续推进", 120)
 
 
+def sanitize_snapshot_label(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-._")
+    return normalized or "workspace"
+
+
 def build_project_dream(entry: dict[str, str], generated_at: str) -> str | None:
     current_path = Path(entry["current_path"])
     history_path = Path(entry["history_path"])
@@ -365,8 +370,8 @@ def build_project_dream(entry: dict[str, str], generated_at: str) -> str | None:
 
 
 def ensure_agents_rule(entry: dict[str, str]) -> None:
-    workspace = Path(entry["workspace"])
-    agents_path = workspace / "AGENTS.md"
+    context_root = Path(entry.get("context_root") or entry["workspace"])
+    agents_path = context_root / "AGENTS.md"
 
     if agents_path.exists():
         existing = agents_path.read_text(encoding="utf-8")
@@ -421,9 +426,15 @@ def main() -> int:
 
             snapshot_key = entry.get("target_dir", key)
             snapshot_suffix = hashlib.sha1(snapshot_key.encode("utf-8")).hexdigest()[:8]
+            snapshot_label = (
+                entry.get("space_name")
+                or Path(entry.get("context_root") or entry.get("workspace") or entry["target_dir"]).name
+                or "workspace"
+            )
+            snapshot_label = sanitize_snapshot_label(snapshot_label)
             snapshot_name = (
                 f"{generated_at.replace(':', '').replace('-', '')}"
-                f"-{Path(entry.get('workspace') or entry['target_dir']).name or 'workspace'}"
+                f"-{snapshot_label}"
                 f"-{snapshot_suffix}.md"
             )
             (DREAMS_DIR / snapshot_name).write_text(content, encoding="utf-8")

@@ -28,7 +28,7 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 默认使用以下固定口令，中英文别名等价：
 
 - `session-memory 保存` / `session-memory save`：内部应拆成 `prepare -> 编辑文件 -> commit` 三步，不再是假定一次命令就完成保存。
-- `session-memory 研究保存` / `session-memory research-save`：把未并入主线的研究阶段性追加到 `research.md`，不覆盖 `current.md`。
+- `session-memory 研究保存` / `session-memory research-save`：把未并入主线的研究阶段性追加到当前命中记忆空间的 `research.md`，不覆盖 `current.md`。
 - `session-memory 恢复` / `session-memory restore`：恢复当前项目的记忆，先读 `current.md`，必要时再读 `history.md`，并且只在有未消费 dream 时才读取 `dream-notes.md`。
 - `session-memory 搜索 <关键词>` / `session-memory search <keyword>`：在当前项目的记忆中查旧结论、旧路径、旧决策。
 - `session-memory 检查` / `session-memory check`：判断现在是否到了应该保存的时机。
@@ -48,15 +48,39 @@ description: 为 Codex 保存和恢复高价值会话记忆。适用于会话过
 
 ## 存储规则
 
-默认优先使用项目级记忆，避免不同项目互相污染：
+默认优先使用项目级记忆，避免不同项目互相污染。
 
-- `<git-root>/.codex/session-memory/current.md`：当前最新状态，作为恢复入口。
-- `<git-root>/.codex/session-memory/history.md`：追加式历史，只记录关键变化。
-- `<git-root>/.codex/session-memory/research.md`：研究流水账，面向同项目多个工作上下文的追加式研究记录。
+`--scope auto` 的解析规则是：
+
+- 如果当前在 Git 仓库里，默认使用 `<git-root>/.codex/session-memory/`
+- 如果不在 Git 仓库里，但某个祖先目录已经存在 `.codex/session-memory/`，默认继续复用那一层共享项目记忆
+- 如果上述共享根都不存在，才退回当前目录自己的 `.codex/session-memory/`
+
+默认共享层的核心文件是：
+
+- `<project-root>/.codex/session-memory/current.md`：当前最新状态，作为恢复入口
+- `<project-root>/.codex/session-memory/history.md`：追加式历史，只记录关键变化
+- `<project-root>/.codex/session-memory/research.md`：研究流水账，面向同项目多个工作上下文的追加式研究记录
 
 默认恢复入口只看 `current.md`、`history.md`、`dream-notes.md`。`research.md` 是研究层，不进入默认恢复/检索热路径，只有用户明确要求“查研究”“恢复某条研究上下文”时才读取。
 
-如果当前工作不在 Git 仓库中，就使用当前工作目录下的 `.codex/session-memory/`。
+如果同一项目里需要多套互不覆盖的研究记忆，在项目根创建 `.codex/session-memory/config.toml`：
+
+```toml
+[spaces]
+"路线A" = "current-research"
+"路线B" = "legacy-research"
+```
+
+也兼容最简顶层写法，例如 `"路线A" = "current-research"`。
+
+路由规则：
+
+- key 是记忆空间名，value 是相对项目根的子目录
+- 当前工作目录命中某个子目录时，目标记忆会切到 `<子目录>/.codex/session-memory/`
+- 多条路径重叠时，按最长匹配优先
+- 不会自动混读项目共享层和其他记忆空间
+- `保存 / 研究保存 / 恢复 / 搜索 / 做梦 / 归档` 都只作用于当前命中的那一层记忆空间
 
 只有在明确处理“个人跨项目主题”时，才使用全局记忆。
 

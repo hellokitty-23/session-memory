@@ -4,7 +4,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from session_memory_common import read_text, resolve_target_dir, write_if_missing
+from session_memory_common import (
+    iter_resolution_summary,
+    read_text,
+    resolve_memory_paths,
+    write_if_missing,
+)
 
 
 def main() -> int:
@@ -20,7 +25,7 @@ def main() -> int:
         "--scope",
         choices=("auto", "workspace", "global"),
         default="auto",
-        help="auto=git root if available, else workspace; workspace=current path; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
+        help="auto=shared project memory, optionally routed by config.toml; workspace=current path only; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
     )
     parser.add_argument(
         "--force",
@@ -34,10 +39,11 @@ def main() -> int:
     refs_dir = skill_dir / "references"
 
     workspace = Path(args.workspace).resolve()
-    target_dir, resolved_scope = resolve_target_dir(workspace, args.scope)
-    current_path = target_dir / "current.md"
-    history_path = target_dir / "history.md"
-    research_path = target_dir / "research.md"
+    paths = resolve_memory_paths(workspace, args.scope)
+    target_dir = Path(paths["target_dir"])
+    current_path = Path(paths["current"])
+    history_path = Path(paths["history"])
+    research_path = Path(paths["research"])
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -57,9 +63,8 @@ def main() -> int:
         force=args.force,
     )
 
-    print(f"workspace={workspace}")
-    print(f"scope={resolved_scope}")
-    print(f"target_dir={target_dir}")
+    for line in iter_resolution_summary(paths):
+        print(line)
     print(f"current={current_path}")
     print(f"history={history_path}")
     print(f"research={research_path}")

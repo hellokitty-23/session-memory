@@ -11,6 +11,7 @@ from session_memory_common import (
     DREAMS_DIR,
     GLOBAL_SESSION_MEMORY_DIR,
     get_project_entry,
+    iter_resolution_summary,
     parse_iso,
     resolve_memory_paths,
     update_project_registry,
@@ -394,7 +395,7 @@ def main() -> int:
         "--scope",
         choices=("auto", "workspace", "global"),
         default="auto",
-        help="auto=git root if available, else workspace; workspace=current path; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
+        help="auto=shared project memory, optionally routed by config.toml; workspace=current path only; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
     )
     parser.add_argument(
         "--history-keep-entries",
@@ -479,9 +480,8 @@ def main() -> int:
             dry_run=args.dry_run,
         )
 
-    print(f"workspace={paths['workspace']}")
-    print(f"scope={paths['scope']}")
-    print(f"target_dir={paths['target_dir']}")
+    for line in iter_resolution_summary(paths):
+        print(line)
     print(f"dry_run={'yes' if args.dry_run else 'no'}")
     print(f"force={'yes' if args.force else 'no'}")
     print(f"history_keep_entries={args.history_keep_entries}")

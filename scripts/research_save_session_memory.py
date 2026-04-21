@@ -7,7 +7,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from session_memory_common import resolve_memory_paths, run_preflight
+from session_memory_common import (
+    iter_resolution_summary,
+    resolve_memory_paths,
+    run_preflight,
+)
 
 
 def detect_git_branch(workspace: Path) -> str | None:
@@ -26,9 +30,19 @@ def detect_git_branch(workspace: Path) -> str | None:
     return branch
 
 
-def detect_work_context(workspace: Path) -> str:
+def detect_work_context(workspace: Path, paths: dict[str, object]) -> str:
     branch = detect_git_branch(workspace)
-    name = workspace.name or "workspace"
+    space_name = str(paths.get("space_name") or "").strip()
+    context_root = Path(paths.get("context_root") or workspace)
+    project_root = Path(paths.get("project_root") or workspace)
+
+    if space_name:
+        name = space_name
+    elif context_root != project_root:
+        name = context_root.name or "workspace"
+    else:
+        name = workspace.name or context_root.name or "workspace"
+
     if branch and branch != name:
         return f"{branch}@{name}"
     return branch or name
@@ -102,7 +116,7 @@ def main() -> int:
         "--scope",
         choices=("auto", "workspace", "global"),
         default="auto",
-        help="auto=git root if available, else workspace; workspace=current path; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
+        help="auto=shared project memory, optionally routed by config.toml; workspace=current path only; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
     )
     parser.add_argument(
         "--init-if-missing",
@@ -158,9 +172,8 @@ def main() -> int:
     paths = resolve_memory_paths(workspace, args.scope)
     research_path = paths["research"]
 
-    print(f"workspace={paths['workspace']}")
-    print(f"scope={paths['scope']}")
-    print(f"target_dir={paths['target_dir']}")
+    for line in iter_resolution_summary(paths):
+        print(line)
     print(f"stage={args.stage}")
     print(f"research={research_path}")
 
@@ -174,7 +187,7 @@ def main() -> int:
         print("hint=run init_session_memory.py first or retry with --init-if-missing")
         return 1
 
-    work_context = (args.work_context or detect_work_context(workspace)).strip()
+    work_context = (args.work_context or detect_work_context(workspace, paths)).strip()
     print(f"work_context={work_context}")
 
     if args.stage == "prepare":

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from session_memory_common import (
     get_project_entry,
+    iter_resolution_summary,
     record_dream_consumed,
     resolve_memory_paths,
     run_preflight,
@@ -25,7 +26,7 @@ def main() -> int:
         "--scope",
         choices=("auto", "workspace", "global"),
         default="auto",
-        help="auto=git root if available, else workspace; workspace=current path; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
+        help="auto=shared project memory, optionally routed by config.toml; workspace=current path only; global=${CODEX_HOME:-$HOME/.codex}/session-memory/global",
     )
     args = parser.parse_args()
 
@@ -35,9 +36,8 @@ def main() -> int:
     history_path = paths["history"]
     dream_notes_path = paths["dream_notes"]
 
-    print(f"workspace={paths['workspace']}")
-    print(f"scope={paths['scope']}")
-    print(f"target_dir={paths['target_dir']}")
+    for line in iter_resolution_summary(paths):
+        print(line)
     print(f"preflight_sleep_status={preflight['sleep_check']['status']}")
 
     if not current_path.exists() and not history_path.exists():

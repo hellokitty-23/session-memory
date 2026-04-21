@@ -6,6 +6,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,15 @@ STATE_PATH = GLOBAL_SESSION_MEMORY_DIR / "state.json"
 SLEEP_LOCK_PATH = GLOBAL_SESSION_MEMORY_DIR / "sleep.lock"
 DREAMS_DIR = GLOBAL_SESSION_MEMORY_DIR / "dreams"
 LOGS_DIR = GLOBAL_SESSION_MEMORY_DIR / "logs"
+SESSION_MEMORY_FILES = ("current.md", "history.md", "research.md", "dream-notes.md")
+CONFIG_TABLE_NAMES = ("spaces", "routes")
+
+
+@dataclass(frozen=True)
+class SpaceRoute:
+    name: str
+    relative_path: str
+    root: Path
 
 
 def read_text(path: Path) -> str:
@@ -37,31 +48,228 @@ def find_git_root(start: Path) -> Path | None:
     return None
 
 
-def resolve_target_dir(base: Path, scope: str) -> tuple[Path, str]:
-    if scope == "global":
-        return GLOBAL_SESSION_MEMORY_DIR / "global", "global"
+def session_memory_dir(root: Path) -> Path:
+    return root / ".codex" / "session-memory"
 
-    if scope == "workspace":
-        return base / ".codex" / "session-memory", "workspace"
 
+def session_memory_config_path(root: Path) -> Path:
+    return session_memory_dir(root) / "config.toml"
+
+
+def has_session_memory_state(root: Path) -> bool:
+    target_dir = session_memory_dir(root)
+    if not target_dir.exists():
+        return False
+    return any((target_dir / name).exists() for name in SESSION_MEMORY_FILES)
+
+
+def find_nearest_config_root(start: Path) -> Path | None:
+    current = start.resolve()
+    for candidate in (current, *current.parents):
+        if session_memory_config_path(candidate).exists():
+            return candidate
+    return None
+
+
+def find_nearest_memory_root(start: Path) -> Path | None:
+    current = start.resolve()
+    for candidate in (current, *current.parents):
+        if has_session_memory_state(candidate):
+            return candidate
+    return None
+
+
+def normalize_route_path(project_root: Path, raw_path: str) -> tuple[str, Path]:
+    raw_text = raw_path.strip()
+    if not raw_text:
+        raise SystemExit("Invalid session-memory config: route path cannot be empty.")
+
+    candidate = Path(raw_text)
+    if candidate.is_absolute():
+        raise SystemExit(
+            f"Invalid session-memory config: absolute paths are not allowed: {raw_text}"
+        )
+
+    clean_parts = [part for part in candidate.parts if part not in ("", ".")]
+    if not clean_parts:
+        raise SystemExit(
+            f"Invalid session-memory config: route path must point to a subdirectory: {raw_text}"
+        )
+    if any(part == ".." for part in clean_parts):
+        raise SystemExit(
+            f"Invalid session-memory config: route path cannot escape project root: {raw_path}"
+        )
+
+    relative_path = Path(*clean_parts)
+    resolved_root = (project_root / relative_path).resolve()
+    if not resolved_root.is_relative_to(project_root):
+        raise SystemExit(
+            f"Invalid session-memory config: route path must stay inside project root: {raw_path}"
+        )
+
+    return relative_path.as_posix(), resolved_root
+
+
+def load_space_routes(project_root: Path) -> tuple[Path | None, list[SpaceRoute]]:
+    config_path = session_memory_config_path(project_root)
+    if not config_path.exists():
+        return None, []
+
+    try:
+        payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(f"Invalid session-memory config {config_path}: {exc}") from exc
+
+    route_entries: list[tuple[str, str]] = []
+    for table_name in CONFIG_TABLE_NAMES:
+        table = payload.get(table_name)
+        if table is None:
+            continue
+        if not isinstance(table, dict):
+            raise SystemExit(
+                f"Invalid session-memory config {config_path}: [{table_name}] must be a table."
+            )
+        for name, route_path in table.items():
+            if not isinstance(route_path, str):
+                raise SystemExit(
+                    f"Invalid session-memory config {config_path}: route {name!r} must map to a string path."
+                )
+            route_entries.append((str(name).strip(), route_path))
+
+    if not route_entries:
+        for name, route_path in payload.items():
+            if name in CONFIG_TABLE_NAMES or not isinstance(route_path, str):
+                continue
+            route_entries.append((str(name).strip(), route_path))
+
+    routes: list[SpaceRoute] = []
+    seen_names: set[str] = set()
+    seen_paths: set[str] = set()
+    for name, route_path in route_entries:
+        if not name:
+            raise SystemExit(
+                f"Invalid session-memory config {config_path}: route name cannot be empty."
+            )
+        if name in seen_names:
+            raise SystemExit(
+                f"Invalid session-memory config {config_path}: duplicated route name {name!r}."
+            )
+        seen_names.add(name)
+        relative_path, route_root = normalize_route_path(project_root, route_path)
+        if relative_path in seen_paths:
+            raise SystemExit(
+                f"Invalid session-memory config {config_path}: duplicated route path {relative_path!r}."
+            )
+        seen_paths.add(relative_path)
+        routes.append(
+            SpaceRoute(name=name, relative_path=relative_path, root=route_root)
+        )
+
+    routes.sort(key=lambda item: len(item.root.parts), reverse=True)
+    return config_path, routes
+
+
+def match_space_route(base: Path, routes: list[SpaceRoute]) -> SpaceRoute | None:
+    current = base.resolve()
+    for route in routes:
+        if current == route.root or current.is_relative_to(route.root):
+            return route
+    return None
+
+
+def resolve_project_root(base: Path) -> tuple[Path, str]:
     git_root = find_git_root(base)
     if git_root is not None:
-        return git_root / ".codex" / "session-memory", "git-root"
+        return git_root, "git-root"
 
-    return base / ".codex" / "session-memory", "workspace"
+    config_root = find_nearest_config_root(base)
+    if config_root is not None:
+        return config_root, "project-root"
+
+    memory_root = find_nearest_memory_root(base)
+    if memory_root is not None:
+        return memory_root, "project-root"
+
+    return base.resolve(), "workspace"
 
 
-def resolve_memory_paths(base: Path, scope: str) -> dict[str, Path | str]:
-    target_dir, resolved_scope = resolve_target_dir(base, scope)
+def resolve_target_dir(base: Path, scope: str) -> tuple[Path, str]:
+    paths = resolve_memory_paths(base, scope)
+    return Path(paths["target_dir"]), str(paths["scope"])
+
+
+def resolve_memory_paths(base: Path, scope: str) -> dict[str, Any]:
+    workspace = base.resolve()
+    if scope == "global":
+        target_dir = GLOBAL_SESSION_MEMORY_DIR / "global"
+        return {
+            "workspace": workspace,
+            "project_root": target_dir,
+            "context_root": target_dir,
+            "scope": "global",
+            "root_scope": "global",
+            "target_dir": target_dir,
+            "current": target_dir / "current.md",
+            "history": target_dir / "history.md",
+            "research": target_dir / "research.md",
+            "dream_notes": target_dir / "dream-notes.md",
+            "config_path": "",
+            "space_name": "",
+            "space_path": "",
+        }
+
+    if scope == "workspace":
+        project_root = workspace
+        context_root = workspace
+        target_dir = session_memory_dir(workspace)
+        resolved_scope = "workspace"
+        root_scope = "workspace"
+        config_path = ""
+        space_name = ""
+        space_path = ""
+    else:
+        project_root, root_scope = resolve_project_root(workspace)
+        config_candidate, routes = load_space_routes(project_root)
+        matched_route = match_space_route(workspace, routes) if routes else None
+        context_root = matched_route.root if matched_route else project_root
+        target_dir = session_memory_dir(context_root)
+        resolved_scope = "configured-space" if matched_route else root_scope
+        config_path = str(config_candidate) if config_candidate else ""
+        space_name = matched_route.name if matched_route else ""
+        space_path = matched_route.relative_path if matched_route else ""
+
     return {
-        "workspace": base,
+        "workspace": workspace,
+        "project_root": project_root,
+        "context_root": context_root,
         "scope": resolved_scope,
+        "root_scope": root_scope,
         "target_dir": target_dir,
         "current": target_dir / "current.md",
         "history": target_dir / "history.md",
         "research": target_dir / "research.md",
         "dream_notes": target_dir / "dream-notes.md",
+        "config_path": config_path,
+        "space_name": space_name,
+        "space_path": space_path,
     }
+
+
+def iter_resolution_summary(paths: dict[str, Any]) -> list[str]:
+    lines = [
+        f"workspace={paths['workspace']}",
+        f"project_root={paths['project_root']}",
+        f"context_root={paths['context_root']}",
+        f"scope={paths['scope']}",
+        f"target_dir={paths['target_dir']}",
+    ]
+    if paths.get("config_path"):
+        lines.append(f"config_path={paths['config_path']}")
+    if paths.get("space_name"):
+        lines.append(f"space_name={paths['space_name']}")
+    if paths.get("space_path"):
+        lines.append(f"space_path={paths['space_path']}")
+    return lines
 
 
 def ensure_global_layout() -> None:
@@ -128,12 +336,12 @@ def save_state(state: dict[str, Any]) -> None:
     _write_json(STATE_PATH, state)
 
 
-def project_key(paths: dict[str, Path | str]) -> str:
+def project_key(paths: dict[str, Any]) -> str:
     return str(paths["target_dir"])
 
 
 def upsert_project_registry(
-    paths: dict[str, Path | str],
+    paths: dict[str, Any],
     action: str,
     active_at: str | None = None,
     mark_active: bool = False,
@@ -146,12 +354,18 @@ def upsert_project_registry(
     entry.update(
         {
             "workspace": str(paths["workspace"]),
+            "project_root": str(paths["project_root"]),
+            "context_root": str(paths["context_root"]),
             "scope": str(paths["scope"]),
+            "root_scope": str(paths.get("root_scope") or paths["scope"]),
             "target_dir": str(paths["target_dir"]),
             "current_path": str(paths["current"]),
             "history_path": str(paths["history"]),
             "research_path": str(paths["research"]),
             "dream_notes_path": str(paths["dream_notes"]),
+            "config_path": str(paths.get("config_path") or ""),
+            "space_name": str(paths.get("space_name") or ""),
+            "space_path": str(paths.get("space_path") or ""),
             "last_action": action,
             "last_seen_at": now,
         }
@@ -177,12 +391,12 @@ def update_project_registry(
     return entry
 
 
-def get_project_entry(paths: dict[str, Path | str]) -> dict[str, Any] | None:
+def get_project_entry(paths: dict[str, Any]) -> dict[str, Any] | None:
     registry = load_registry()
     return registry.get("projects", {}).get(project_key(paths))
 
 
-def record_dream_consumed(paths: dict[str, Path | str], consumed_at: str) -> None:
+def record_dream_consumed(paths: dict[str, Any], consumed_at: str) -> None:
     update_project_registry(project_key(paths), last_dream_consumed_at=consumed_at)
 
 
@@ -303,7 +517,7 @@ def spawn_background_dream(trigger_action: str) -> int:
 
 
 def run_preflight(
-    paths: dict[str, Path | str],
+    paths: dict[str, Any],
     action: str,
     sleep_threshold_hours: float = 5.0,
     mark_active: bool = False,
